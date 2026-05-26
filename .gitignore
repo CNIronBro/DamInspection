@@ -1,0 +1,35 @@
+/figures/
+
+/web/frontend/node_modules
+/web/frontend/dist
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Environment
+.env
+.venv/
+venv/
+
+# Runtime config (keep config.example.yml as template)
+config.yml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# model
+/checkpoint
