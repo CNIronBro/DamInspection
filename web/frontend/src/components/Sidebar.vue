@@ -14,6 +14,10 @@
         <el-icon class="icon"><Clock /></el-icon>
         <span>历史记录</span>
       </router-link>
+      <router-link to="/stitch" class="nav-item" :class="{ active: $route.path === '/stitch' }">
+        <el-icon class="icon"><Grid /></el-icon>
+        <span>拼接检测</span>
+      </router-link>
       <el-tooltip content="即将开放" placement="right" :show-after="300">
         <div class="nav-item disabled">
           <el-icon class="icon"><Document /></el-icon>
@@ -36,7 +40,7 @@
 </template>
 
 <script setup>
-import { Monitor, Clock, Document, Setting } from '@element-plus/icons-vue'
+import { Monitor, Clock, Document, Setting, Grid } from '@element-plus/icons-vue'
 
 defineProps({
   modelReady: { type: Boolean, default: false },

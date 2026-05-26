@@ -23,3 +23,9 @@ export const getStatsSummary = (params) => api.get('/records/stats/summary', { p
 
 // 人工标注量化测量
 export const measureAnnotation = (data) => api.post('/records/measure', data)
+
+// 拼接+检测
+export const stitchAndDetect = (formData) =>
+  api.post('/stitch/detect', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })

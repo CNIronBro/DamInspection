@@ -12,11 +12,13 @@ from fastapi.staticfiles import StaticFiles
 from .pipeline_adapter import detect_from_bytes_sync, load_pipeline, get_classes_config, IMAGE_DIR
 from .database import init_db
 from .api_records import router as records_router
+from .api_stitch import router as stitch_router
 
 app = FastAPI(title="大坝缺陷检测系统", version="1.0.0")
 
 # 注册记录/统计路由
 app.include_router(records_router)
+app.include_router(stitch_router)
 
 # CORS — 开发模式允许 Vite dev server
 app.add_middleware(

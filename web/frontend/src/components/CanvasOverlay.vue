@@ -4,6 +4,7 @@
       v-if="imageSrc"
       :src="imageSrc"
       class="base-image"
+      draggable="false"
       @load="onBaseImageLoad"
     />
     <canvas

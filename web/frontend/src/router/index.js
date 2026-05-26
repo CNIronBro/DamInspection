@@ -8,6 +8,11 @@ const routes = [
     name: 'stats',
     component: () => import('../views/StatsView.vue'),
   },
+  {
+    path: '/stitch',
+    name: 'stitch',
+    component: () => import('../views/StitchView.vue'),
+  },
 ]
 
 const router = createRouter({
