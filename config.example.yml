@@ -1,0 +1,278 @@
+# MMSegmentation 推理与缺陷量化配置文件（实例级版本）
+# 使用方式: python infer_and_measure.py --cfg config.example.yml
+
+# ==================== 模型配置 ====================
+model:
+  # MMSegmentation 配置文件路径（必须）
+  mmseg_config: "config/segformer_mit-b2_1xb8-40k_s2dsdeepcrack-512x512.py"
+  
+  # Checkpoint 权重路径（必须）
+  checkpoint: "./checkpoint/best_mIoU_iter_32000.pth"
+  
+  # 推理设备
+  device: "cuda:0"  # 或 "cpu"
+  
+  # 是否启用半精度推理（如果支持）
+  fp16: false
+  
+  # 文件夹推理时显示进度条
+  show_progress: true
+
+# ==================== 输入输出配置 ====================
+io:
+  # 输入：图片路径或目录
+  input: "./test_img"  # 可以是单张图片或目录
+
+  # 输出目录
+  output_dir: "./output"
+  
+  # 允许的图片后缀
+  exts: [".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"]
+  
+  # 保存选项
+  save:
+    overlay: true              # 保存 overlay 标注图
+    id_mask: true             # 保存单通道 ID mask (0-3)
+    color_mask: true          # 保存彩色 mask
+    debug_raw_7class_overlay: false  # 保存 remap 前的原始 7 类 overlay（用于排查）
+    csv: true                 # 保存 CSV 汇总
+    json: false               # 保存 JSON 汇总
+  
+  # CSV 表头语言设置
+  csv:
+    header_language: "zh"      # "zh" 中文表头 | "en" 英文表头（默认 "zh"）
+  
+  # RLE 编码输出配置（用于前端渲染）
+  output:
+    rle:
+      enable: true             # 是否生成 RLE 编码文件
+      format: "coco"           # "coco" (COCO RLE, 需要 pycocotools) | "simple" (纯 numpy RLE)
+      file: "masks_rle.jsonl"  # 输出文件名（.jsonl 或 .json）
+      include_instance_masks: true  # 是否包含实例级 mask RLE
+      include_class_merged: false    # 是否额外输出每类合并 mask 的 RLE（可选）
+      order: "C"               # simple 格式的 flatten 顺序："C" (row-major) 或 "F" (column-major)
+      binary_threshold: 0.5    # mask 二值化阈值（一般不需要，mask 已经是 0/1）
+
+# ==================== 类别配置 ====================
+classes:
+  # 原始 7 类定义（训练时的类别）
+  original_classes:
+    background: 0
+    crack: 1
+    spalling: 2
+    corrosion: 3
+    efflorescence: 4
+    vegetation: 5
+    control_point: 6
+  
+  # 需要保留的类别（最终输出的缺陷类型）
+  keep_classes: ["crack", "spalling", "efflorescence"]
+  
+  # 输出类别 ID（重映射后的 4 类）
+  output_classes:
+    background: 0
+    crack: 1
+    spalling: 2
+    efflorescence: 3
+  
+  # 类别重映射规则（做法A：非目标类映射到 background）
+  class_remap:
+    background: background
+    crack: crack
+    spalling: spalling
+    efflorescence: efflorescence
+    corrosion: background      # 映射到 background
+    vegetation: background      # 映射到 background
+    control_point: background   # 映射到 background
+  
+  # 三类缺陷的可视化颜色（BGR 格式，OpenCV 使用）
+  # 注意：OpenCV 使用 BGR 格式，所以 [B, G, R]
+  # BGR 颜色对照：
+  #   - 红色: [0, 0, 255] (B=0, G=0, R=255)
+  #   - 绿色: [0, 255, 0] (B=0, G=255, R=0)
+  #   - 蓝色: [255, 0, 0] (B=255, G=0, R=0)
+  #   - 青色: [255, 255, 0] (B=255, G=255, R=0)
+  #   - 黄色: [0, 255, 255] (B=0, G=255, R=255)
+  #   - 白色: [255, 255, 255] (B=255, G=255, R=255)
+  palette:
+    crack: [255, 255, 255]        # 白色
+    spalling: [255, 255, 0]       # 青色（根据实际显示效果修正）
+    efflorescence: [0, 255, 255]   # 黄色（根据实际显示效果修正）
+    # background 不需要颜色（黑色 [0,0,0]）
+  
+  # 颜色空间：BGR（OpenCV 默认）或 RGB
+  color_space: "BGR"
+
+# ==================== 后处理配置 ====================
+postprocess:
+  # 总开关：false 则完全不做任何后处理
+  enable: true
+  
+  # 全局默认配置
+  min_area_px: 80              # 小连通域过滤阈值（像素数）
+  
+  # 形态学处理
+  morph:
+    enable: true
+    kernel: 3                   # 核大小
+    open_iter: 1                # 开运算迭代次数（去毛刺）
+    close_iter: 1               # 闭运算迭代次数（填小洞、连通断裂）
+  
+  # 孔洞填充（可选）
+  hole_filling:
+    enable: false
+    max_hole_area_px: 50        # 最大孔洞面积（像素数），小于此值的孔洞会被填充
+  
+  # 按类单独配置（可选，没有则使用全局默认）
+  per_class:
+    crack:
+      min_area_px: 50           # 裂缝用更小的阈值
+      
+      # 去噪：先去掉小噪点，避免噪点被桥接
+      denoise:
+        enable: true
+        min_area_px: 80          # 小于此面积的连通域会被移除
+      
+      # 轻量形态学：连接非常小的缺口
+      morph:
+        enable: true
+        close:
+          kernel: 3
+          iter: 1                # 轻微 close，连接极小断点
+        open:
+          kernel: 0              # 0 表示不做 open
+          iter: 0
+      
+      # 端点桥接：核心功能，解决裂缝断裂问题
+      bridge:
+        enable: true             # 总开关
+        max_gap_px: 30           # 最大端点连接距离（像素）
+        max_angle_deg: 25         # 方向一致性阈值（度）
+        line_thickness: 1         # 连接线粗细（1~2 推荐）
+        max_pairs_per_endpoint: 1 # 每个端点最多连接几个（默认1，防止胡乱连接）
+        prefer_nearest: true      # 优先连接最近端点
+        min_component_length_px: 20  # 太短的裂缝段不参与桥接（可减少噪点干扰）
+        debug_save: true          # 是否保存桥接debug可视化
+        debug_dirname: "debug_bridge"  # debug 输出目录名
+        safe_check:               # 可选安全检查：防止跨越大面积背景
+          enable: false
+          sample_points: 20
+          max_bg_ratio: 0.7
+    
+    spalling:
+      min_area_px: 120          # 剥落用更大的阈值
+      morph:
+        kernel: 5               # 剥落用更大的核
+        open_iter: 0
+        close_iter: 2
+    
+    efflorescence:
+      min_area_px: 120          # 泛碱用更大的阈值
+      morph:
+        kernel: 5
+        open_iter: 0
+        close_iter: 2
+
+# ==================== 量化测量配置 ====================
+measurement:
+  # 像素到毫米的转换比例（需要根据实际图像分辨率手动填写）
+  # 例如：如果 1 像素 = 0.1 毫米，则设置为 0.1
+  mm_per_px: 1.0
+  
+  # 数值保留小数位
+  decimals: 2
+  
+  # 各类缺陷的测量项配置
+  compute:
+    crack:
+      area: true              # 面积
+      length: true            # 长度（基于 skeletonize）
+      width: true             # 宽度（基于 distance transform）
+      width_stats: ["mean", "max", "p95"]  # 宽度统计项
+    
+    spalling:
+      area: true              # 面积
+      eq_diameter: true       # 等效直径
+      bbox_axes: true         # 最小外接矩形长短轴
+    
+    efflorescence:
+      area: true              # 面积
+      eq_diameter: true       # 等效直径
+      bbox_axes: true         # 最小外接矩形长短轴
+  
+  # 输出选项
+  output:
+    save_instance_csv: true   # 保存实例级 CSV
+    save_instance_json: false # 保存实例级 JSON
+
+# ==================== 可视化配置 ====================
+visualize:
+  # Overlay 透明度（0-1）
+  alpha: 0.5
+  
+  # 是否绘制轮廓
+  draw_contours: true
+  contour_thickness: 2
+  
+  # 字体设置（中文渲染）
+  font:
+    # 字体文件路径（为空则自动探测常见路径）
+    # Linux 示例: /usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc
+    # Windows 示例: C:/Windows/Fonts/simhei.ttf
+    # 也可以将字体文件放到项目 fonts/ 目录下
+    font_path: ""            # 为空则自动探测
+    
+    # 字体大小
+    font_size: 26
+    
+    # 字体颜色（BGR 格式，与项目 color_space 保持一致）
+    font_color: [255, 255, 255]  # 白色
+    
+    # 行间距（像素）
+    line_spacing: 6
+    
+    # 描边设置（提高可读性）
+    stroke:
+      enable: true            # 是否启用描边
+      width: 2                # 描边宽度
+      color: [0, 0, 0]        # 描边颜色（BGR 格式，黑色）
+  
+  # 信息框设置
+  info_box:
+    enable: true
+    position: "topleft"  # topleft | topright | bottomleft | bottomright
+    padding: 8
+    bg_alpha: 0.5        # 背景透明度
+    text_line_spacing: 6
+    max_instances_per_class: 3  # 每类最多展示几个实例（避免信息框过长）
+    show_summary: true          # 是否展示类别汇总（总面积/总长度等）
+  
+  # 实例标签设置
+  instance_label:
+    enable: true                # 是否在实例上绘制标签（如"裂缝1"）
+    draw_at: "centroid"         # 标签位置：centroid（质心）或 bbox_center（边界框中心）
+    draw_bg: false              # 是否绘制标签背景（默认 false，仅保留描边以提高可读性）
+    text_scale: 0.6             # 标签文字大小（已废弃，使用 font.font_size）
+    text_thickness: 2           # 标签文字粗细（已废弃，使用 font.stroke.width）
+  
+  # 信息面板可视化（额外输出，显示所有实例的完整量化数据）
+  panel:
+    enable: true                # 是否生成带信息面板的可视化图
+    output_dir: "vis_panel"     # 输出目录名（相对于 output_dir）
+    placement: "left"            # 面板位置："left"（左侧）或 "bottom"（底部）
+    width_px: 800               # placement=left 时面板宽度（像素）
+    height_px: 300              # placement=bottom 时面板高度（像素）
+    bg_color: [30, 30, 30]      # 面板背景颜色（BGR 格式）
+    padding: 16                 # 面板内边距（像素）
+    line_spacing: 8             # 文本行间距（像素）
+    title_font_scale: 1.0       # 标题字体缩放（相对于 font.font_size）
+    text_font_scale: 0.8        # 正文字体缩放（相对于 font.font_size）
+    min_font_size: 12           # 自动缩放时的最小字体大小
+    auto_shrink: true           # 文字过多时自动缩小字体适配
+    paginate:                   # 分页设置
+      enable: true              # 是否启用分页（实例太多时输出多页图片）
+      lines_per_page: 35        # 每页最大行数
+  
+  # Debug 可视化（用于调参）
+  debug:
+    save_bridge_debug: true     # 是否保存裂缝桥接debug可视化（端点/连接线）
