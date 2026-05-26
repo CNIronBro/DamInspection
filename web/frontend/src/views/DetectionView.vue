@@ -79,7 +79,7 @@ import Toolbar from '../components/Toolbar.vue'
 import AnnotationToolbar from '../components/AnnotationToolbar.vue'
 import CanvasOverlay from '../components/CanvasOverlay.vue'
 import ResultPanel from '../components/ResultPanel.vue'
-import { getModels, detect as detectApi, saveRecord, getRecord } from '../api'
+import { getModels, detect as detectApi, saveRecord, getRecord, getConfig } from '../api'
 import { useAnnotation } from '../composables/useAnnotation'
 
 const route = useRoute()
@@ -164,7 +164,10 @@ watch(() => route.query.recordId, (id) => {
 
 async function loadRecord(recordId) {
   try {
-    const { data: record } = await getRecord(recordId)
+    const [{ data: record }, { data: cfg }] = await Promise.all([
+      getRecord(recordId),
+      getConfig(),
+    ])
     currentRecordId.value = recordId
     const instances = (record.instances || []).map(inst => ({
       class_name: inst.class_name,
@@ -183,11 +186,7 @@ async function loadRecord(recordId) {
       rle: null,
     }))
 
-    const classes = {
-      crack: { color_rgb: [144, 147, 153], label_cn: '裂缝' },
-      spalling: { color_rgb: [64, 158, 255], label_cn: '剥落' },
-      efflorescence: { color_rgb: [230, 162, 60], label_cn: '泛碱' },
-    }
+    const classes = cfg.classes
 
     const byClass = record.by_class || {}
     result.value = {
