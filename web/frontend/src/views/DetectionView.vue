@@ -17,8 +17,14 @@
       v-if="editMode"
       :tool="annTool"
       :class-name="annClassName"
+      :brush-width="annBrushWidth"
+      :brush-stroke-count="annBrushStrokes.length"
       @update:tool="annSetTool($event)"
       @update:class-name="annClassName = $event"
+      @update:brush-width="annBrushWidth = $event"
+      @brush-undo="annUndoStroke"
+      @brush-clear="annClearStrokes"
+      @brush-confirm="handleBrushConfirm"
     />
 
     <div class="main-content">
@@ -36,12 +42,15 @@
           :active-class-name="annClassName"
           :drawing-state="annDrawingState"
           :selected-annotation-id="annSelectedId"
+          :brush-strokes="annBrushStrokes"
+          :brush-width="annBrushWidth"
           @hover-instance="highlightedId = $event"
           @click-instance="handleClickInstance"
           @annotation-add="annAddAnnotation"
           @annotation-update="annUpdateAnnotation"
           @annotation-select="annSelectAnnotation"
           @drawing-update="annUpdateDrawing"
+          @brush-add-stroke="annAddStroke"
         />
         <div v-else class="empty-state">
           <el-icon :size="48" color="#c0c4cc"><Upload /></el-icon>
@@ -102,11 +111,17 @@ const {
   className: annClassName,
   selectedId: annSelectedId,
   drawingState: annDrawingState,
+  brushStrokes: annBrushStrokes,
+  brushWidth: annBrushWidth,
   setTool: annSetTool,
   addAnnotation: _annAddAnnotation,
   updateAnnotation: _annUpdateAnnotation,
   selectAnnotation: annSelectAnnotation,
   updateDrawing: annUpdateDrawing,
+  addStroke: annAddStroke,
+  undoStroke: annUndoStroke,
+  clearStrokes: annClearStrokes,
+  confirmBrush: _annConfirmBrush,
   clear: annClear,
 } = useAnnotation()
 
@@ -121,6 +136,12 @@ function annUpdateAnnotation(id, updates) {
   if (!result.value) return
   const { width, height } = result.value.image
   _annUpdateAnnotation(id, updates, width, height, 1.0)
+}
+
+async function handleBrushConfirm() {
+  if (!result.value) return
+  const { width, height } = result.value.image
+  await _annConfirmBrush(width, height, 1.0)
 }
 
 const currentModelName = computed(() => {

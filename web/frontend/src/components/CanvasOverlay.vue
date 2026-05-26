@@ -35,18 +35,26 @@ const props = defineProps({
   activeClassName: { type: String, default: 'crack' },
   drawingState: { type: Object, default: () => ({ active: false, points: [], previewPoint: null }) },
   selectedAnnotationId: { type: String, default: null },
+  brushStrokes: { type: Array, default: () => [] },
+  brushWidth: { type: Number, default: 15 },
 })
 
 const emit = defineEmits([
   'hover-instance', 'click-instance',
   'annotation-add', 'annotation-update', 'annotation-select',
   'drawing-update',
+  'brush-add-stroke',
 ])
 
 const wrapperRef = ref(null)
 const overlayCanvas = ref(null)
 
 const MANUAL_COLOR = '#FF8C00'
+
+// 画笔状态（本地）
+let brushActive = false
+let brushPoints = []
+let brushMousePos = null  // 用于光标预览
 
 const imageSrc = computed(() => {
   if (!props.imageData) return ''
@@ -62,6 +70,7 @@ const imageSrc = computed(() => {
 const activeCursor = computed(() => {
   if (props.activeTool === 'polygon') return 'crosshair'
   if (props.activeTool === 'rectangle') return 'crosshair'
+  if (props.activeTool === 'brush') return 'none'
   return 'default'
 })
 
@@ -126,6 +135,7 @@ function drawOverlay() {
 
   if (!props.instances || props.instances.length === 0) {
     if (props.editMode) drawManualAnnotations(ctx)
+    if (props.editMode && props.activeTool === 'brush') drawBrushOverlay(ctx)
     return
   }
 
@@ -168,6 +178,11 @@ function drawOverlay() {
   // 编辑模式：手动标注
   if (props.editMode) {
     drawManualAnnotations(ctx)
+  }
+
+  // 画笔覆盖层
+  if (props.editMode && props.activeTool === 'brush') {
+    drawBrushOverlay(ctx)
   }
 }
 
@@ -340,6 +355,49 @@ function drawManualShape(ctx, points, isSelected, isDrawing) {
   ctx.restore()
 }
 
+// ---- 画笔绘制 ----
+
+function drawBrushStroke(ctx, points, width) {
+  if (!points || points.length < 2) return
+  ctx.save()
+  ctx.globalAlpha = 0.6
+  ctx.strokeStyle = MANUAL_COLOR
+  ctx.lineWidth = width
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.beginPath()
+  ctx.moveTo(points[0][0], points[0][1])
+  for (let i = 1; i < points.length; i++) {
+    ctx.lineTo(points[i][0], points[i][1])
+  }
+  ctx.stroke()
+  ctx.restore()
+}
+
+function drawBrushOverlay(ctx) {
+  // 已完成的笔画
+  for (const stroke of props.brushStrokes) {
+    drawBrushStroke(ctx, stroke, props.brushWidth)
+  }
+
+  // 正在画的笔画
+  if (brushActive && brushPoints.length >= 2) {
+    drawBrushStroke(ctx, brushPoints, props.brushWidth)
+  }
+
+  // 光标圆圈预览
+  if (brushMousePos) {
+    ctx.save()
+    ctx.globalAlpha = 0.7
+    ctx.strokeStyle = MANUAL_COLOR
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.arc(brushMousePos[0], brushMousePos[1], props.brushWidth / 2, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.restore()
+  }
+}
+
 // ---- 鼠标交互 ----
 
 function hitTest(mx, my) {
@@ -392,6 +450,19 @@ function hitTestVertex(mx, my) {
 }
 
 function onMouseMove(e) {
+  // 画笔模式
+  if (props.editMode && props.activeTool === 'brush') {
+    const { x, y } = toCanvasCoords(e.offsetX, e.offsetY)
+    brushMousePos = [Math.round(x), Math.round(y)]
+
+    if (brushActive) {
+      brushPoints.push([Math.round(x), Math.round(y)])
+    }
+
+    drawOverlay()
+    return
+  }
+
   if (isDragging && dragAnnotationId !== null && dragVertexIdx >= 0) {
     const { x, y } = toCanvasCoords(e.offsetX, e.offsetY)
     const ann = props.manualAnnotations.find(a => a.id === dragAnnotationId)
@@ -428,6 +499,12 @@ function onMouseMove(e) {
 }
 
 function onMouseLeave() {
+  if (props.editMode && props.activeTool === 'brush') {
+    brushMousePos = null
+    drawOverlay()
+    return
+  }
+
   if (!props.editMode) {
     emit('hover-instance', null)
   }
@@ -442,6 +519,9 @@ function onClick(e) {
     if (key) emit('click-instance', key)
     return
   }
+
+  // 画笔模式不处理 click
+  if (props.activeTool === 'brush') return
 
   const { x, y } = toCanvasCoords(e.offsetX, e.offsetY)
 
@@ -507,6 +587,14 @@ function onDblClick(e) {
 function onMouseDown(e) {
   if (!props.editMode) return
 
+  // 画笔模式：开始画一笔
+  if (props.activeTool === 'brush') {
+    const { x, y } = toCanvasCoords(e.offsetX, e.offsetY)
+    brushActive = true
+    brushPoints = [[Math.round(x), Math.round(y)]]
+    return
+  }
+
   if (props.activeTool === 'pointer') {
     const vtx = hitTestVertex(e.offsetX, e.offsetY)
     if (vtx) {
@@ -524,6 +612,17 @@ function onMouseDown(e) {
 }
 
 function onMouseUp(e) {
+  // 画笔模式：结束一笔
+  if (props.editMode && props.activeTool === 'brush' && brushActive) {
+    brushActive = false
+    if (brushPoints.length >= 2) {
+      emit('brush-add-stroke', [...brushPoints])
+    }
+    brushPoints = []
+    drawOverlay()
+    return
+  }
+
   if (isDragging) {
     isDragging = false
     dragAnnotationId = null
@@ -558,7 +657,7 @@ function onMouseUp(e) {
 
 // 监听变化重绘
 watch(
-  () => [props.instances, props.renderMode, props.highlightedId, props.editMode, props.manualAnnotations, props.drawingState, props.selectedAnnotationId],
+  () => [props.instances, props.renderMode, props.highlightedId, props.editMode, props.manualAnnotations, props.drawingState, props.selectedAnnotationId, props.brushStrokes, props.brushWidth],
   () => nextTick(drawOverlay),
   { deep: true }
 )
